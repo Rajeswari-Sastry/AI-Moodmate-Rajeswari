@@ -1,0 +1,25 @@
+# Core libraries
+numpy
+pandas
+opencv-python
+streamlit
+
+# Deep learning
+tensorflow==2.20.0
+keras
+torch
+torchvision
+deepface
+
+# NLP (optional, if you plan to handle text input)
+transformers
+nltk
+
+# Spotify API
+spotipy
+
+# Image handling
+Pillow
+
+# File utilities
+python-multipart

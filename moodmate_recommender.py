@@ -1,20 +1,21 @@
 import time
 import cv2
-import argparse
 from deepface import DeepFace
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import random
+import tkinter as tk
+import webbrowser
 
 # -----------------------
 # SPOTIFY CREDENTIALS
 # -----------------------
 CLIENT_ID = "5e0ac81611ed495aa3ce82ef99784eb1"
-CLIENT_SECRET = "d8a7865568ed41dcac9415f2962cb8c9"
+CLIENT_SECRET = "d8a7865568ed41dcac9415f2962cb8"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPE = "user-library-read playlist-modify-private playlist-modify-public"
 
-# Authenticate ONCE
+# Authenticate once
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
@@ -36,6 +37,36 @@ emotion_playlists = {
 }
 
 # -----------------------
+# FUNCTION: SHOW PLAYLIST POPUP WITH CLICKABLE LINKS
+# -----------------------
+def show_playlist_popup(title, playlist_name, owner, tracks, spotify_url, spotify_uri):
+    def open_spotify_url():
+        webbrowser.open(spotify_url)
+
+    def open_spotify_app():
+        webbrowser.open(spotify_uri)
+
+    root = tk.Tk()
+    root.title(title)
+    root.geometry("400x400")
+    root.attributes("-topmost", True)
+
+    text = tk.Text(root, wrap="word")
+    text.insert("1.0", f"🎵 Playlist: {playlist_name}\nBy: {owner}\n\nSample Tracks:\n" + "\n".join(tracks))
+    text.config(state="disabled")
+    text.pack(pady=10, padx=10, fill="both", expand=True)
+
+    btn_frame = tk.Frame(root)
+    btn_frame.pack(pady=5)
+
+    tk.Button(btn_frame, text="Open in Browser", command=open_spotify_url, bg="lightblue").pack(side="left", padx=5)
+    tk.Button(btn_frame, text="Open in Spotify App", command=open_spotify_app, bg="lightgreen").pack(side="left", padx=5)
+
+    tk.Button(root, text="Close", command=root.destroy).pack(pady=10)
+
+    root.mainloop()
+
+# -----------------------
 # FUNCTION: RECOMMEND SONGS
 # -----------------------
 def recommend_songs(emotion):
@@ -50,7 +81,6 @@ def recommend_songs(emotion):
     }
 
     query = emotion_to_query.get(emotion.lower(), "Mood Booster")
-    print(f"🎵 Suggested Playlist: {query}")
 
     try:
         results = sp.search(q=query, type="playlist", limit=1)
@@ -58,14 +88,21 @@ def recommend_songs(emotion):
 
         if playlists:
             playlist = playlists[0]
-            print(f"✅ Found Spotify playlist: {playlist['name']} (by {playlist['owner']['display_name']})")
-            print(f"🔗 Playlist URL: {playlist['external_urls']['spotify']}")
-        else:
-            print("⚠️ No playlists found for that emotion. Try again with a different query.")
+            tracks = sp.playlist_items(playlist["id"], limit=5)
+            track_list = [f"{t['track']['name']} by {t['track']['artists'][0]['name']}" for t in tracks["items"]]
 
+            show_playlist_popup(
+                title=f"Recommended Playlist for {emotion.capitalize()} Mood",
+                playlist_name=playlist["name"],
+                owner=playlist["owner"]["display_name"],
+                tracks=track_list,
+                spotify_url=playlist['external_urls']['spotify'],
+                spotify_uri=f"spotify:playlist:{playlist['id']}"
+            )
+        else:
+            print("⚠️ No playlists found for that emotion.")
     except Exception as e:
         print(f"❌ Spotify API error: {e}")
-
 
 # -----------------------
 # FUNCTION: ONE-SHOT EMOTION DETECTION
@@ -122,6 +159,7 @@ def detect_emotion_webcam():
 # MAIN
 # -----------------------
 if __name__ == "__main__":
+    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--oneshot", action="store_true", help="Run in one-shot mode (detect once and exit)")
     parser.add_argument("--webcam", action="store_true", help="Run in continuous webcam mode")

@@ -2,7 +2,7 @@ import streamlit as st
 import cv2
 import tempfile
 from deepface import DeepFace
-from notebooks.moodmate_recommender import sp  # Spotify object
+from moodmate_recommender import sp
 import random
 import pandas as pd
 
@@ -33,9 +33,6 @@ mood_summary = {
     "surprise": "Something unexpected! Let’s keep the good vibes going ✨"
 }
 
-# -----------------------
-# Spotify Recommendation Function for Streamlit
-# -----------------------
 # -----------------------
 # Spotify Recommendation Function for Streamlit
 # -----------------------
@@ -148,17 +145,38 @@ elif option == "📁 Upload Image":
 # -----------------------
 # Manual Input Option
 # -----------------------
+# -----------------------
+# Manual Input Option (NLP-style Text Detection)
+# -----------------------
 elif option == "✏️ Type Mood Manually":
-    mood = st.text_input("Enter your mood (e.g., happy, sad, angry, etc.)", key="manual_input")
-    if st.button("Get Playlist", key="manual_button"):
-        if mood.strip():
-            st.success(f"Detected Emotion: {mood.capitalize()}")
-            st.info(mood_summary.get(mood.lower(), "Here’s a playlist to match your current mood 🎧"))
+    user_text = st.text_area("Describe how you feel (e.g., 'I had a great day!' or 'Feeling so tired...')", key="manual_input")
+
+    if st.button("Detect Emotion & Get Playlist", key="manual_button"):
+        if user_text.strip():
+            # Simple NLP-style emotion detection using keywords
+            emotion_keywords = {
+                "happy": ["happy", "joy", "excited", "good", "great", "awesome", "love", "fun"],
+                "sad": ["sad", "tired", "down", "depressed", "unhappy", "lonely"],
+                "angry": ["angry", "mad", "furious", "irritated", "frustrated"],
+                "fear": ["scared", "afraid", "worried", "nervous", "anxious"],
+                "surprise": ["surprised", "amazed", "shocked", "wow"],
+                "neutral": ["okay", "fine", "normal", "alright", "meh"]
+            }
+
+            detected_emotion = "neutral"
+            for emotion, words in emotion_keywords.items():
+                if any(word in user_text.lower() for word in words):
+                    detected_emotion = emotion
+                    break
+
+            st.success(f"Detected Emotion: {detected_emotion.capitalize()}")
+            st.info(mood_summary.get(detected_emotion, "Here’s a playlist to match your current mood 🎧"))
             st.write("🎧 Spotify Recommendation:")
-            recommend_songs_streamlit(mood)
-            update_mood_tracker(mood)
+            recommend_songs_streamlit(detected_emotion)
+            update_mood_tracker(detected_emotion)
+
         else:
-            st.warning("Please type a mood first!")
+            st.warning("Please type something about how you feel!")
 
 # -----------------------
 # Mood Summary Tracker Chart
