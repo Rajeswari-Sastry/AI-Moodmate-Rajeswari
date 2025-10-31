@@ -3,7 +3,6 @@ import cv2
 from deepface import DeepFace
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-import random
 import tkinter as tk
 import webbrowser
 
@@ -11,11 +10,11 @@ import webbrowser
 # SPOTIFY CREDENTIALS
 # -----------------------
 CLIENT_ID = "5e0ac81611ed495aa3ce82ef99784eb1"
-CLIENT_SECRET = "d8a7865568ed41dcac9415f2962cb8"
+CLIENT_SECRET = "d8a7865568ed41dcac9415f2962cb8c9"
 REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPE = "user-library-read playlist-modify-private playlist-modify-public"
 
-# Authenticate once
+# Authenticate with Spotify
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
@@ -37,7 +36,7 @@ emotion_playlists = {
 }
 
 # -----------------------
-# FUNCTION: SHOW PLAYLIST POPUP WITH CLICKABLE LINKS
+# SHOW PLAYLIST POPUP
 # -----------------------
 def show_playlist_popup(title, playlist_name, owner, tracks, spotify_url, spotify_uri):
     def open_spotify_url():
@@ -63,14 +62,13 @@ def show_playlist_popup(title, playlist_name, owner, tracks, spotify_url, spotif
     tk.Button(btn_frame, text="Open in Spotify App", command=open_spotify_app, bg="lightgreen").pack(side="left", padx=5)
 
     tk.Button(root, text="Close", command=root.destroy).pack(pady=10)
-
     root.mainloop()
 
 # -----------------------
-# FUNCTION: RECOMMEND SONGS
+# RECOMMEND SONGS
 # -----------------------
 def recommend_songs(emotion):
-    emotion_to_query = {
+    query_map = {
         "happy": "Happy Hits",
         "sad": "Sad Songs",
         "angry": "Calm Down",
@@ -79,8 +77,7 @@ def recommend_songs(emotion):
         "neutral": "Chill Vibes",
         "surprise": "Sunny Day"
     }
-
-    query = emotion_to_query.get(emotion.lower(), "Mood Booster")
+    query = query_map.get(emotion.lower(), "Mood Booster")
 
     try:
         results = sp.search(q=query, type="playlist", limit=1)
@@ -105,7 +102,7 @@ def recommend_songs(emotion):
         print(f"❌ Spotify API error: {e}")
 
 # -----------------------
-# FUNCTION: ONE-SHOT EMOTION DETECTION
+# ONE-SHOT EMOTION DETECTION
 # -----------------------
 def detect_emotion_once():
     cap = cv2.VideoCapture(0)
@@ -125,7 +122,7 @@ def detect_emotion_once():
     recommend_songs(emotion)
 
 # -----------------------
-# FUNCTION: CONTINUOUS WEBCAM MODE
+# CONTINUOUS WEBCAM MODE
 # -----------------------
 def detect_emotion_webcam():
     cap = cv2.VideoCapture(0)
