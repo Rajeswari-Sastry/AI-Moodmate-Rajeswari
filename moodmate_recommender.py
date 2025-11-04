@@ -15,24 +15,29 @@ REDIRECT_URI = "http://127.0.0.1:8888/callback"
 SCOPE = "user-library-read playlist-modify-private playlist-modify-public"
 
 # Authenticate with Spotify
-sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    redirect_uri=REDIRECT_URI,
-    scope=SCOPE
-))
+try:
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope=SCOPE
+    ))
+    print("✅ Spotify authentication successful.")
+except Exception as e:
+    print(f"❌ Spotify authentication failed: {e}")
+    sp = None
 
 # -----------------------
 # EMOTION TO PLAYLIST MAPPING
 # -----------------------
 emotion_playlists = {
-    "happy": ["Good Vibes", "Happy Hits", "Sunny Day"],
-    "sad": ["Sad Songs", "Life Sucks", "Melancholy Vibes"],
-    "angry": ["Calm Down", "Chill Vibes", "Peaceful Piano"],
-    "neutral": ["Focus Playlist", "Deep Focus", "Chill Hits"],
-    "surprise": ["Pop Surprises", "Unexpected Tunes"],
-    "fear": ["Calm Anxiety", "Soothing Sounds"],
-    "disgust": ["Mood Reset", "Positive Energy"]
+    "happy": "Happy Hits",
+    "sad": "Sad Songs",
+    "angry": "Calm Down",
+    "fear": "Confidence Boost",
+    "disgust": "Mood Booster",
+    "neutral": "Chill Vibes",
+    "surprise": "Sunny Day"
 }
 
 # -----------------------
@@ -68,38 +73,49 @@ def show_playlist_popup(title, playlist_name, owner, tracks, spotify_url, spotif
 # RECOMMEND SONGS
 # -----------------------
 def recommend_songs(emotion):
-    query_map = {
-        "happy": "Happy Hits",
-        "sad": "Sad Songs",
-        "angry": "Calm Down",
-        "fear": "Confidence Boost",
-        "disgust": "Mood Booster",
-        "neutral": "Chill Vibes",
-        "surprise": "Sunny Day"
-    }
-    query = query_map.get(emotion.lower(), "Mood Booster")
+    if not sp:
+        print("❌ Spotify client not initialized properly.")
+        return
+
+    query = emotion_playlists.get(emotion.lower(), "Mood Booster")
+    print(f"🔍 Searching Spotify for playlists related to: {query}")
 
     try:
         results = sp.search(q=query, type="playlist", limit=1)
-        playlists = results.get("playlists", {}).get("items", [])
+        if not results or "playlists" not in results or not results["playlists"]["items"]:
+            print("⚠️ No playlists found in Spotify search results.")
+            return
 
-        if playlists:
-            playlist = playlists[0]
-            tracks = sp.playlist_items(playlist["id"], limit=5)
-            track_list = [f"{t['track']['name']} by {t['track']['artists'][0]['name']}" for t in tracks["items"]]
+        playlist = results["playlists"]["items"][0]
+        print(f"🎧 Found playlist: {playlist['name']} by {playlist['owner']['display_name']}")
 
-            show_playlist_popup(
-                title=f"Recommended Playlist for {emotion.capitalize()} Mood",
-                playlist_name=playlist["name"],
-                owner=playlist["owner"]["display_name"],
-                tracks=track_list,
-                spotify_url=playlist['external_urls']['spotify'],
-                spotify_uri=f"spotify:playlist:{playlist['id']}"
-            )
-        else:
-            print("⚠️ No playlists found for that emotion.")
+        tracks_resp = sp.playlist_items(playlist["id"], limit=5)
+        if not tracks_resp or "items" not in tracks_resp:
+            print("⚠️ No tracks found in playlist.")
+            return
+
+        track_list = []
+        for item in tracks_resp["items"]:
+            track = item.get("track")
+            if track and "name" in track and "artists" in track:
+                track_list.append(f"{track['name']} by {track['artists'][0]['name']}")
+
+        if not track_list:
+            track_list = ["No track details available."]
+
+        show_playlist_popup(
+            title=f"Recommended Playlist for {emotion.capitalize()} Mood",
+            playlist_name=playlist.get("name", "Unknown"),
+            owner=playlist.get("owner", {}).get("display_name", "Unknown"),
+            tracks=track_list,
+            spotify_url=playlist["external_urls"]["spotify"],
+            spotify_uri=f"spotify:playlist:{playlist['id']}"
+        )
+
+    except spotipy.exceptions.SpotifyException as e:
+        print(f"❌ Spotify authentication or permission error: {e}")
     except Exception as e:
-        print(f"❌ Spotify API error: {e}")
+        print(f"❌ Unexpected Spotify API error: {e}")
 
 # -----------------------
 # ONE-SHOT EMOTION DETECTION
@@ -119,6 +135,7 @@ def detect_emotion_once():
         result = result[0]
 
     emotion = result['dominant_emotion']
+    print(f"😀 Detected Emotion: {emotion}")
     recommend_songs(emotion)
 
 # -----------------------
@@ -142,6 +159,7 @@ def detect_emotion_webcam():
                 result = result[0]
 
             emotion = result['dominant_emotion']
+            print(f"😀 Detected Emotion: {emotion}")
             recommend_songs(emotion)
             last_detection_time = time.time()
 
