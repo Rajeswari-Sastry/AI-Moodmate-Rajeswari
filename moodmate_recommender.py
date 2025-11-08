@@ -6,6 +6,9 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import tkinter as tk
 from PIL import Image, ImageTk
 import webbrowser
+import threading
+import queue
+import sys
 
 # -----------------------
 # SPOTIFY CREDENTIALS
@@ -13,12 +16,8 @@ import webbrowser
 CLIENT_ID = "5e0ac81611ed495aa3ce82ef99784eb1"
 CLIENT_SECRET = "d8a7865568ed41dcac9415f2962cb8c9"
 
-# Authenticate without login or browser
 try:
-    auth_manager = SpotifyClientCredentials(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET
-    )
+    auth_manager = SpotifyClientCredentials(client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
     sp = spotipy.Spotify(auth_manager=auth_manager)
     print("✅ Spotify connected successfully (no login required).")
 except Exception as e:
@@ -41,117 +40,134 @@ emotion_playlists = {
 
 
 # -----------------------
-# POPUP WINDOW
+# SAFE UI UPDATE QUEUE
 # -----------------------
-def show_playlist_popup(emotion, playlist_name, tracks, spotify_url, spotify_uri):
-    def open_spotify_url(event=None):
-        webbrowser.open(spotify_url)
-
-    def open_spotify_app(event=None):
-        webbrowser.open(spotify_uri)
-
-    root = tk.Tk()
-    root.title("Rajeswari's MoodMate 🎧")
-    root.geometry("460x550")
-    root.configure(bg="#f4f6f8")
-    root.attributes("-topmost", True)
-
-    # --- Logo ---
-    try:
-        logo_img = Image.open("moodmate_logo.png")
-        logo_img = logo_img.resize((90, 90))
-        logo = ImageTk.PhotoImage(logo_img)
-        logo_label = tk.Label(root, image=logo, bg="#f4f6f8")
-        logo_label.image = logo
-        logo_label.pack(pady=8)
-    except FileNotFoundError:
-        tk.Label(root, text="🎧 Rajeswari's MoodMate", font=("Segoe UI", 16, "bold"),
-                 bg="#f4f6f8", fg="#2b2b2b").pack(pady=12)
-
-    # --- Mood Info ---
-    tk.Label(root, text=f"😀 Detected Mood: {emotion.capitalize()}",
-             font=("Segoe UI", 13, "bold"), bg="#f4f6f8", fg="#2b2b2b").pack(pady=5)
-
-    tk.Label(root, text=f"Recommended Playlist: {playlist_name}",
-             font=("Segoe UI", 11), bg="#f4f6f8").pack(pady=2)
-
-    # --- Songs List ---
-    songs_text = tk.Text(root, wrap="word", font=("Segoe UI", 10),
-                         height=10, width=50, bg="white", relief="flat")
-    songs_text.insert("1.0", "\n".join(tracks))
-    songs_text.config(state="disabled")
-    songs_text.pack(pady=15, padx=15)
-
-    # --- Links Section ---
-    tk.Label(root, text="🎵 Explore Playlist:", font=("Segoe UI", 11, "bold"),
-             bg="#f4f6f8").pack(pady=(5, 2))
-
-    browser_link = tk.Label(root, text="🌐 Open in Browser", fg="#1DB954", bg="#f4f6f8",
-                            cursor="hand2", font=("Segoe UI", 10, "underline"))
-    browser_link.pack(pady=2)
-    browser_link.bind("<Button-1>", open_spotify_url)
-
-    app_link = tk.Label(root, text="🎧 Open in Spotify App", fg="#1DB954", bg="#f4f6f8",
-                        cursor="hand2", font=("Segoe UI", 10, "underline"))
-    app_link.pack(pady=2)
-    app_link.bind("<Button-1>", open_spotify_app)
-
-    tk.Button(root, text="Close", command=root.destroy, bg="#d62828",
-              fg="white", width=14, relief="flat").pack(pady=15)
-
-    root.mainloop()
+update_queue = queue.Queue()
 
 
 # -----------------------
-# RECOMMEND SONGS
+# POPUP THREAD
+# -----------------------
+class MoodPopup(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.root = None
+
+    def run(self):
+        self.root = tk.Tk()
+        self.root.title("Rajeswari's MoodMate 🎧")
+        self.root.geometry("460x580")
+        self.root.configure(bg="#f4f6f8")
+        self.root.attributes("-topmost", True)
+
+        try:
+            logo_img = Image.open("moodmate_logo.png").resize((90, 90))
+            self.logo = ImageTk.PhotoImage(logo_img)
+            tk.Label(self.root, image=self.logo, bg="#f4f6f8").pack(pady=8)
+        except FileNotFoundError:
+            tk.Label(self.root, text="🎧 Rajeswari's MoodMate", font=("Segoe UI", 16, "bold"),
+                     bg="#f4f6f8", fg="#2b2b2b").pack(pady=12)
+
+        self.mood_label = tk.Label(self.root, text="😀 Detected Mood: ---",
+                                   font=("Segoe UI", 13, "bold"), bg="#f4f6f8", fg="#2b2b2b")
+        self.mood_label.pack(pady=5)
+
+        self.playlist_label = tk.Label(self.root, text="Recommended Playlist: ---",
+                                       font=("Segoe UI", 11), bg="#f4f6f8")
+        self.playlist_label.pack(pady=2)
+
+        self.songs_text = tk.Text(self.root, wrap="word", font=("Segoe UI", 10),
+                                  height=10, width=50, bg="white", relief="flat")
+        self.songs_text.pack(pady=15, padx=15)
+
+        self.browser_link = tk.Label(self.root, text="🌐 Open in Browser", fg="#1DB954", bg="#f4f6f8",
+                                     cursor="hand2", font=("Segoe UI", 10, "underline"))
+        self.browser_link.pack(pady=2)
+
+        self.app_link = tk.Label(self.root, text="🎧 Open in Spotify App", fg="#1DB954", bg="#f4f6f8",
+                                 cursor="hand2", font=("Segoe UI", 10, "underline"))
+        self.app_link.pack(pady=2)
+
+        tk.Label(self.root, text="Data Source: Spotify 🎵", font=("Segoe UI", 9, "italic"),
+                 bg="#f4f6f8", fg="#555").pack(pady=(10, 0))
+
+        tk.Button(self.root, text="Close", command=self.safe_close, bg="#d62828",
+                  fg="white", width=14, relief="flat").pack(pady=15)
+
+        self.root.after(100, self.check_updates)
+        self.root.mainloop()
+
+    def safe_close(self):
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def check_updates(self):
+        while not update_queue.empty():
+            emotion, playlist_name, tracks, spotify_url, spotify_uri = update_queue.get()
+            self.mood_label.config(text=f"😀 Detected Mood: {emotion.capitalize()}")
+            self.playlist_label.config(text=f"Recommended Playlist: {playlist_name}")
+            self.songs_text.config(state="normal")
+            self.songs_text.delete("1.0", tk.END)
+            self.songs_text.insert("1.0", "\n".join(tracks))
+            self.songs_text.config(state="disabled")
+            self.browser_link.bind("<Button-1>", lambda e, url=spotify_url: webbrowser.open(url))
+            self.app_link.bind("<Button-1>", lambda e, uri=spotify_uri: webbrowser.open(uri))
+        self.root.after(100, self.check_updates)
+
+
+# -----------------------
+# SPOTIFY RECOMMENDER
 # -----------------------
 def recommend_songs(emotion):
     if not sp:
-        print("❌ Spotify client not initialized properly.")
         return
 
     query = emotion_playlists.get(emotion.lower(), "Mood Booster")
     print(f"🔍 Searching Spotify for playlists related to: {query}")
 
-    try:
-        results = sp.search(q=query, type="playlist", limit=1)
-        if not results or not results["playlists"]["items"]:
-            print("⚠️ No playlists found.")
-            return
+    playlist = None
+    for attempt in range(3):
+        try:
+            sp.auth_manager.get_access_token(as_dict=False)
+            results = sp.search(q=query, type="playlist", limit=3)
+            if results and results["playlists"]["items"]:
+                playlist = results["playlists"]["items"][attempt % len(results["playlists"]["items"])]
+                break
+        except Exception as e:
+            print(f"⚠️ Spotify search attempt {attempt+1} failed: {e}")
+            time.sleep(2)
 
-        playlist = results["playlists"]["items"][0]
-        tracks_resp = sp.playlist_items(playlist["id"], limit=5)
+    if not playlist:
+        update_queue.put((emotion, "Playlist Not Found",
+                          ["⚠️ Could not fetch playlist."],
+                          "https://open.spotify.com/", "spotify:app"))
+        return
 
-        track_list = []
-        for item in tracks_resp["items"]:
-            track = item.get("track")
-            if track and "name" in track and "artists" in track:
-                track_list.append(f"🎶 {track['name']} — {track['artists'][0]['name']}")
+    playlist_name = playlist.get("name", f"{emotion.capitalize()} Playlist")
+    print(f"🎧 Found playlist: {playlist_name}")
 
-        if not track_list:
-            track_list = ["No track details available."]
+    tracks_resp = sp.playlist_items(playlist["id"], limit=5)
+    tracks = []
+    for item in tracks_resp["items"]:
+        track = item.get("track")
+        if track:
+            tracks.append(f"🎶 {track['name']} — {track['artists'][0]['name']}")
 
-        show_playlist_popup(
-            emotion=emotion,
-            playlist_name=playlist.get("name", "Unknown"),
-            tracks=track_list,
-            spotify_url=playlist["external_urls"]["spotify"],
-            spotify_uri=f"spotify:playlist:{playlist['id']}"
-        )
-
-    except Exception as e:
-        print(f"❌ Spotify API error: {e}")
+    update_queue.put((emotion, playlist_name, tracks,
+                      playlist["external_urls"]["spotify"],
+                      f"spotify:playlist:{playlist['id']}"))
 
 
 # -----------------------
-# ONE-SHOT EMOTION DETECTION
+# ONE-SHOT (Silent)
 # -----------------------
 def detect_emotion_once():
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
     ret, frame = cap.read()
     cap.release()
-    cv2.destroyAllWindows()
-
     if not ret:
         print("❌ Failed to capture image from webcam.")
         return
@@ -159,43 +175,74 @@ def detect_emotion_once():
     result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
     if isinstance(result, list):
         result = result[0]
-
     emotion = result['dominant_emotion']
     print(f"😀 Detected Emotion: {emotion}")
-    recommend_songs(emotion)
+
+    popup = MoodPopup()
+    popup.start()
+    threading.Thread(target=recommend_songs, args=(emotion,), daemon=True).start()
+
+    # Wait until popup is closed before exiting
+    for t in threading.enumerate():
+        if isinstance(t, MoodPopup):
+            t.join()
+
+    print("✅ Exiting cleanly...")
+    sys.exit(0)
 
 
 # -----------------------
-# CONTINUOUS WEBCAM MODE
+# CONTINUOUS (Silent Webcam)
 # -----------------------
 def detect_emotion_webcam():
-    cap = cv2.VideoCapture(0)
-    last_detection_time = 0
-    cooldown = 5
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    last_detection_time, cooldown, last_emotion = 0, 5, None
 
-    print("\n📷 Webcam started. Press 'q' to quit.\n")
+    popup = MoodPopup()
+    popup.start()
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    print("\n📷 Webcam running privately (no preview). Press Ctrl+C to stop.\n")
 
-        if time.time() - last_detection_time > cooldown:
-            result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
-            if isinstance(result, list):
-                result = result[0]
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print("⚠️ Unable to read from webcam.")
+                break
 
-            emotion = result['dominant_emotion']
-            print(f"😀 Detected Emotion: {emotion}")
-            recommend_songs(emotion)
-            last_detection_time = time.time()
+            if time.time() - last_detection_time > cooldown:
+                result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+                if isinstance(result, list):
+                    result = result[0]
 
-        cv2.imshow("Webcam - Press Q to Exit", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+                emotion = result['dominant_emotion']
 
-    cap.release()
-    cv2.destroyAllWindows()
+                if emotion != last_emotion:
+                    print(f"😀 New Mood Detected: {emotion}")
+                    threading.Thread(target=recommend_songs, args=(emotion,), daemon=True).start()
+                    last_emotion = emotion
+                else:
+                    print(f"🙂 Mood unchanged: {emotion}")
+
+                last_detection_time = time.time()
+
+            # Privacy-safe: no preview window shown
+            time.sleep(0.05)
+
+    except KeyboardInterrupt:
+        print("\n🛑 Stopped by user (Ctrl+C).")
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+        # Wait until popup window closes before exiting
+        for t in threading.enumerate():
+            if isinstance(t, MoodPopup):
+                t.join()
+
+        print("✅ Exiting cleanly...")
+        sys.exit(0)
 
 
 # -----------------------
@@ -204,8 +251,8 @@ def detect_emotion_webcam():
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--oneshot", action="store_true", help="Run once")
-    parser.add_argument("--webcam", action="store_true", help="Run continuous webcam mode")
+    parser.add_argument("--oneshot", action="store_true", help="Run once and exit")
+    parser.add_argument("--webcam", action="store_true", help="Run continuous mode")
     args = parser.parse_args()
 
     if args.oneshot:
